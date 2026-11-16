@@ -1,0 +1,417 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Maxwell's Space Invaders</title>
+<style>
+  body { background:#000; color:#0f0; font-family:monospace; text-align:center; margin:0; }
+  h1 { margin:12px 0 4px; letter-spacing:4px; }
+  canvas { background:#000; border:3px solid #0f0; image-rendering:pixelated; }
+  p { color:#8f8; }
+</style>
+</head>
+<body>
+<h1>MAXWELL'S SPACE INVADERS</h1>
+<canvas id="game" width="600" height="500"></canvas>
+<p>⬅️ ➡️ to move &nbsp; | &nbsp; SPACE to shoot &nbsp; | &nbsp; R to restart</p>
+
+<script>
+// ===== SETTINGS — try changing these numbers! =====
+const SHIP_SPEED   = 5;   // how fast your ship moves
+const LASER_SPEED  = 8;   // how fast your laser flies
+const ALIEN_SPEED  = 0.6; // how fast the aliens march on level 1
+const SPEED_UP_PER_LEVEL = 0.2; // how much faster they get each level
+const ALIEN_ROWS   = 3;   // rows of aliens
+const ALIEN_COLS   = 6;   // aliens in each row
+const PIXEL        = 4;   // size of each pixel square
+const START_LIVES  = 3;   // how many lives you get
+const MAX_LIVES    = 5;   // the most lives you can have
+const HEART_FALL_SPEED  = 2;    // how fast free-life hearts fall
+const HEART_DROP_CHANCE = 0.1;  // chance an exploding alien drops a heart (0.1 = 1 in 10)
+const SHOOTERS     = 3;   // how many aliens in the shooting row can shoot
+const ALIEN_LASER_SPEED = 4;      // how fast alien lasers fall
+const ALIEN_SHOOT_CHANCE = 0.005; // bigger number = aliens shoot more often
+const BOSS_PIXEL   = 8;   // bosses are drawn with BIGGER pixels
+
+// ===== THE BOSSES — one every 3 levels! =====
+// health = hits to beat him, speed = how fast he moves,
+// shoot = how often he shoots, spread = how many lasers at once
+const BOSSES = {
+  3: { name: "ZORG THE PURPLE", color: "#c4f", health: 15, speed: 2,   shoot: 0.02,  spread: 1,
+       art: [
+         "0000001111110000000",
+         "0000111111111100000",
+         "0011111111111111000",
+         "0111001111110011100",
+         "1111001111110011110",
+         "1111111111111111110",
+         "1111111111111111110",
+         "0011110011001111000",
+         "0111000000000011100",
+         "1100011000011000110",
+         "1100000000000000110",
+       ]},
+  6: { name: "OCTO-BLASTER", color: "#4f8", health: 20, speed: 2.5, shoot: 0.02,  spread: 2,
+       art: [
+         "0000011111111000000",
+         "0001111111111110000",
+         "0011111111111111000",
+         "0111100111100111100",
+         "0111100111100111100",
+         "0111111111111111100",
+         "0011111111111111000",
+         "0101010101010101010",
+         "1010101010101010101",
+         "1001001001001001001",
+         "0100100100100100100",
+       ]},
+  9: { name: "MEGA KING", color: "#f84", health: 25, speed: 3,   shoot: 0.018, spread: 3,
+       art: [
+         "0010001000100010000",
+         "0011011101110110000",
+         "0011111111111110000",
+         "0111111111111111000",
+         "1110011111110011100",
+         "1110011111110011100",
+         "1111111111111111100",
+         "1111100000001111100",
+         "0111111111111111000",
+         "0011011011011011000",
+         "0110000000000001100",
+       ]},
+};
+const FINAL_LEVEL = 9; // beat the boss on this level to win the whole game!
+
+// ===== PIXEL ART — 1 = colored square, 0 = empty =====
+const SHIP_ART = [
+  "00000100000",
+  "00001110000",
+  "00001110000",
+  "01111111110",
+  "11111111111",
+  "11111111111",
+];
+const ALIEN_ART = [
+  "00100000100",
+  "00010001000",
+  "00111111100",
+  "01101110110",
+  "11111111111",
+  "10111111101",
+  "10100000101",
+  "00011011000",
+];
+const HEART_ART = [
+  "0110110",
+  "1111111",
+  "1111111",
+  "0111110",
+  "0011100",
+  "0001000",
+];
+// Normal aliens change color in each "world" (levels 1-3, 4-6, 7-9)
+const WORLD_COLORS = ["#fff", "#8ff", "#ff8"];
+
+// ===== SOUNDS — made by the computer, like old arcade machines! =====
+let audio = null;
+function startAudio() {
+  if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+  if (audio.state === "suspended") audio.resume();
+}
+
+// A beep that slides from one pitch to another
+function beep(type, startFreq, endFreq, length, volume) {
+  if (!audio) return;
+  const t = audio.currentTime;
+  const osc = audio.createOscillator();
+  const gain = audio.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(startFreq, t);
+  osc.frequency.exponentialRampToValueAtTime(endFreq, t + length);
+  gain.gain.setValueAtTime(volume, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + length);
+  osc.connect(gain).connect(audio.destination);
+  osc.start(t);
+  osc.stop(t + length);
+}
+
+// A crunchy "KSSH" noise for explosions
+function noise(length, volume) {
+  if (!audio) return;
+  const t = audio.currentTime;
+  const buffer = audio.createBuffer(1, audio.sampleRate * length, audio.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  const src = audio.createBufferSource();
+  const gain = audio.createGain();
+  src.buffer = buffer;
+  gain.gain.setValueAtTime(volume, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + length);
+  src.connect(gain).connect(audio.destination);
+  src.start(t);
+}
+
+const sounds = {
+  shoot:     () => beep("square", 900, 200, 0.15, 0.08),            // pew!
+  alienBoom: () => { noise(0.2, 0.2); beep("square", 400, 60, 0.2, 0.06); },
+  hurt:      () => { noise(0.6, 0.3); beep("sawtooth", 300, 40, 0.6, 0.1); },
+  lifeUp:    () => { beep("square", 523, 530, 0.1, 0.08);             // ta-da!
+                     setTimeout(() => beep("square", 659, 665, 0.1, 0.08), 100);
+                     setTimeout(() => beep("square", 1047, 1050, 0.2, 0.08), 200); },
+  bossHit:   () => beep("square", 200, 100, 0.08, 0.06),
+  bossBoom:  () => { noise(1.5, 0.4); beep("sawtooth", 200, 30, 1.5, 0.15); },
+  march:     (n) => beep("square", [110, 98, 87, 82][n], [110, 98, 87, 82][n] * 0.9, 0.1, 0.12),
+};
+
+// ===== THE GAME =====
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const keys = {};
+let ship, lasers, aliens, alienDir, alienSpeed, score, gameOver, won;
+let alienLasers, lives, hurtTimer, level, boss, levelTimer;
+let marchTimer = 0, marchNote = 0;
+let hearts = [], heartTimer = 0;
+
+function dropHeart(x, y) {
+  hearts.push({ x: x, y: y, w: 7 * PIXEL, h: 6 * PIXEL });
+}
+
+function drawArt(art, x, y, color, size = PIXEL) {
+  ctx.fillStyle = color;
+  art.forEach((row, r) => {
+    [...row].forEach((c, col) => {
+      if (c === "1") ctx.fillRect(x + col * size, y + r * size, size, size);
+    });
+  });
+}
+
+function startGame() {
+  ship = { x: 275, y: 450, w: 11 * PIXEL, h: 6 * PIXEL };
+  lives = START_LIVES;
+  score = 0;
+  gameOver = false;
+  won = false;
+  level = 1;
+  startLevel();
+}
+
+function startLevel() {
+  lasers = [];
+  alienLasers = [];
+  aliens = [];
+  boss = null;
+  hurtTimer = 0;
+  hearts = [];
+  // Every level drops one free heart from the sky, 5 to 15 seconds in
+  heartTimer = 300 + Math.random() * 600;
+  levelTimer = 120; // show "LEVEL X" for 2 seconds
+  alienDir = 1;
+  alienSpeed = ALIEN_SPEED + (level - 1) * SPEED_UP_PER_LEVEL; // aliens get faster each level
+
+  const b = BOSSES[level];
+  if (b) {
+    // BOSS LEVEL!
+    const art = b.art;
+    boss = { ...b, x: 220, y: 50, w: art[0].length * BOSS_PIXEL, h: art.length * BOSS_PIXEL,
+             maxHealth: b.health, dir: 1 };
+    return;
+  }
+
+  // Only ONE row has shooters — the bottom row (closest to you)
+  const shootingRow = ALIEN_ROWS - 1;
+  let cols = [...Array(ALIEN_COLS).keys()].sort(() => Math.random() - 0.5);
+  let shooters = cols.slice(0, SHOOTERS);
+
+  for (let r = 0; r < ALIEN_ROWS; r++)
+    for (let c = 0; c < ALIEN_COLS; c++)
+      aliens.push({ x: 40 + c * 60, y: 40 + r * 45, w: 11 * PIXEL, h: 8 * PIXEL,
+                    canShoot: r === shootingRow && shooters.includes(c) });
+}
+
+function hits(l, t) {
+  return l.x > t.x && l.x < t.x + t.w && l.y > t.y && l.y < t.y + t.h;
+}
+
+function update() {
+  if (gameOver || won) return;
+  if (levelTimer > 0) { levelTimer--; return; } // pause while "LEVEL X" shows
+
+  // Move ship
+  if (keys["ArrowLeft"])  ship.x -= SHIP_SPEED;
+  if (keys["ArrowRight"]) ship.x += SHIP_SPEED;
+  ship.x = Math.max(0, Math.min(canvas.width - ship.w, ship.x));
+
+  // Move your lasers
+  lasers.forEach(l => l.y -= LASER_SPEED);
+  lasers = lasers.filter(l => l.y > 0);
+
+  // Free-life hearts!
+  if (heartTimer > 0) {
+    heartTimer--;
+    if (heartTimer <= 0) dropHeart(40 + Math.random() * 500, 0); // the level's free heart
+  }
+  hearts.forEach(h => {
+    h.y += HEART_FALL_SPEED;
+    if (h.x < ship.x + ship.w && h.x + h.w > ship.x &&
+        h.y + h.h > ship.y && h.y < ship.y + ship.h) {
+      h.caught = true;
+      if (lives < MAX_LIVES) lives++;
+      sounds.lifeUp();
+    }
+  });
+  hearts = hearts.filter(h => !h.caught && h.y < canvas.height);
+
+  if (boss) {
+    // Boss slides side to side
+    boss.x += boss.speed * boss.dir;
+    if (boss.x <= 0 || boss.x + boss.w >= canvas.width) boss.dir *= -1;
+    // Boss shoots! Bigger bosses shoot more lasers at once (spread)
+    if (Math.random() < boss.shoot) {
+      const cx = boss.x + boss.w / 2;
+      if (boss.spread === 1) alienLasers.push({ x: boss.x + Math.random() * boss.w, y: boss.y + boss.h, dx: 0 });
+      if (boss.spread === 2) [-40, 40].forEach(o => alienLasers.push({ x: cx + o, y: boss.y + boss.h, dx: 0 }));
+      if (boss.spread === 3) [-1.2, 0, 1.2].forEach(d => alienLasers.push({ x: cx, y: boss.y + boss.h, dx: d }));
+    }
+    // You hit the boss?
+    lasers.forEach(l => {
+      if (hits(l, boss)) { l.y = -100; boss.health--; score += 5; sounds.bossHit(); }
+    });
+    if (boss.health <= 0) {
+      score += 500;
+      sounds.bossBoom();
+      if (level === FINAL_LEVEL) { won = true; }
+      else { level++; startLevel(); return; }
+    }
+  } else {
+    // Move aliens — bounce off the walls and step down
+    let hitWall = aliens.some(a =>
+      (alienDir > 0 && a.x + a.w >= canvas.width) || (alienDir < 0 && a.x <= 0));
+    if (hitWall) { alienDir *= -1; aliens.forEach(a => a.y += 20); }
+    aliens.forEach(a => a.x += alienSpeed * alienDir);
+
+    // The classic "dum, dum, dum, dum" marching beat — faster when fewer aliens are left!
+    marchTimer--;
+    if (marchTimer <= 0) {
+      sounds.march(marchNote);
+      marchNote = (marchNote + 1) % 4;
+      marchTimer = 12 + aliens.length * 2;
+    }
+
+    // Laser hits alien?
+    lasers.forEach(l => {
+      aliens.forEach(a => {
+        if (!a.dead && hits(l, a)) { a.dead = true; l.y = -100; score += 10; sounds.alienBoom();
+          if (Math.random() < HEART_DROP_CHANCE) dropHeart(a.x + 8, a.y); // lucky bonus heart!
+        }
+      });
+    });
+    aliens = aliens.filter(a => !a.dead);
+
+    // Shooter aliens fire back
+    aliens.forEach(a => {
+      if (a.canShoot && Math.random() < ALIEN_SHOOT_CHANCE)
+        alienLasers.push({ x: a.x + a.w / 2, y: a.y + a.h, dx: 0 });
+    });
+
+    // All aliens gone? Next level!
+    if (aliens.length === 0) { level++; startLevel(); return; }
+    if (aliens.some(a => a.y + a.h >= ship.y)) gameOver = true;
+  }
+
+  // Move alien lasers
+  alienLasers.forEach(l => { l.y += ALIEN_LASER_SPEED; l.x += l.dx; });
+  alienLasers = alienLasers.filter(l => l.y < canvas.height);
+
+  // Alien laser hits you?
+  if (hurtTimer > 0) hurtTimer--;
+  alienLasers.forEach(l => {
+    if (hurtTimer === 0 && l.x > ship.x && l.x < ship.x + ship.w &&
+        l.y + 10 > ship.y && l.y < ship.y + ship.h) {
+      l.y = canvas.height + 100;
+      lives--;
+      sounds.hurt();
+      hurtTimer = 90; // about 1.5 seconds of safety after getting hit
+      if (lives <= 0) gameOver = true;
+    }
+  });
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Ship blinks while it's safe after getting hit
+  if (hurtTimer === 0 || Math.floor(hurtTimer / 6) % 2 === 0)
+    drawArt(SHIP_ART, ship.x, ship.y, "#0f0");
+
+  const worldColor = WORLD_COLORS[Math.floor((level - 1) / 3) % WORLD_COLORS.length];
+  aliens.forEach(a => drawArt(ALIEN_ART, a.x, a.y, a.canShoot ? "#f44" : worldColor));
+
+  if (boss) {
+    drawArt(boss.art, boss.x, boss.y, boss.color, BOSS_PIXEL);
+    // Boss health bar
+    ctx.fillStyle = "#400";
+    ctx.fillRect(150, 34, 300, 8);
+    ctx.fillStyle = "#f44";
+    ctx.fillRect(150, 34, 300 * Math.max(0, boss.health) / boss.maxHealth, 8);
+  }
+
+  hearts.forEach(h => drawArt(HEART_ART, h.x, h.y, "#f6a"));
+
+  ctx.fillStyle = "#ff0";
+  lasers.forEach(l => ctx.fillRect(l.x - 1, l.y, 3, 12));
+  ctx.fillStyle = "#f44";
+  alienLasers.forEach(l => ctx.fillRect(l.x - 1, l.y, 3, 10));
+
+  // Score, level and lives along the top
+  ctx.fillStyle = "#0f0";
+  ctx.font = "18px monospace";
+  ctx.textAlign = "left";
+  ctx.fillText("SCORE: " + score, 10, 22);
+  ctx.textAlign = "center";
+  ctx.fillText("LEVEL " + level + " / " + FINAL_LEVEL, 300, 22);
+  ctx.textAlign = "right";
+  ctx.fillText("LIVES: " + "♥".repeat(Math.max(0, lives)), canvas.width - 10, 22);
+
+  ctx.textAlign = "center";
+  if (levelTimer > 0 && !gameOver && !won) {
+    ctx.font = "40px monospace";
+    if (boss) {
+      ctx.fillStyle = boss.color;
+      ctx.fillText(level === FINAL_LEVEL ? "FINAL BOSS!" : "BOSS LEVEL!", 300, 300);
+      ctx.font = "22px monospace";
+      ctx.fillText(boss.name, 300, 340);
+    } else {
+      ctx.fillStyle = "#ff0";
+      ctx.fillText("LEVEL " + level, 300, 300);
+    }
+  }
+
+  if (gameOver || won) {
+    ctx.font = "36px monospace";
+    ctx.fillStyle = won ? "#ff0" : "#f00";
+    ctx.fillText(won ? "YOU SAVED THE GALAXY!" : "GAME OVER", 300, 300);
+    ctx.font = "18px monospace";
+    ctx.fillText("Press R to play again", 300, 340);
+  }
+}
+
+document.addEventListener("keydown", e => {
+  keys[e.key] = true;
+  startAudio(); // browsers only allow sound after you press a key
+  if (e.key === " ") {
+    e.preventDefault();
+    if (lasers.length < 1 && !gameOver && !won && levelTimer === 0) {
+      lasers.push({ x: ship.x + ship.w / 2, y: ship.y });
+      sounds.shoot();
+    }
+  }
+  if (e.key === "r" || e.key === "R") startGame();
+});
+document.addEventListener("keyup", e => keys[e.key] = false);
+
+function loop() { update(); draw(); requestAnimationFrame(loop); }
+startGame();
+loop();
+</script>
+</body>
+</html>
