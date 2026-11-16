@@ -85,4 +85,4 @@ Note: GitHub Pages on a private repository needs a paid GitHub plan. On a free a
 
 ---
 
-Made with ❤️ by Maxwell, with help from Dad and Claude. Inspired by his friend Dina's Pac-Man game.
+Made with ❤️ by Maxwell, with help from Mamma and Claude. Inspired by his friend Dina's Pac-Man game.
