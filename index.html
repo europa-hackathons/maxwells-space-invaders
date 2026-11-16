@@ -2,18 +2,38 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Maxwell's Space Invaders</title>
 <style>
-  body { background:#000; color:#0f0; font-family:monospace; text-align:center; margin:0; }
-  h1 { margin:12px 0 4px; letter-spacing:4px; }
-  canvas { background:#000; border:3px solid #0f0; image-rendering:pixelated; }
+  body { background:#000; color:#0f0; font-family:monospace; text-align:center; margin:0;
+         -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  h1 { margin:12px 0 4px; letter-spacing:4px; font-size:clamp(16px, 5vw, 32px); }
+  canvas { background:#000; border:3px solid #0f0; image-rendering:pixelated;
+           width:min(600px, 96vw); height:auto; touch-action:none; box-sizing:border-box; }
   p { color:#8f8; }
+  /* Touch buttons — only show up on phones and tablets */
+  #touch { display:none; justify-content:space-between; gap:10px;
+           width:min(600px, 96vw); margin:10px auto; touch-action:none; }
+  #touch button { flex:1; font-size:32px; padding:18px 0; background:#030; color:#0f0;
+                  border:3px solid #0f0; border-radius:12px; font-family:monospace;
+                  -webkit-tap-highlight-color:transparent; }
+  #touch button.fire { flex:1.5; background:#330; color:#ff0; border-color:#ff0; }
+  #touch button:active { background:#0f0; color:#000; }
+  @media (pointer: coarse) {
+    #touch { display:flex; }
+    #keyhelp { display:none; }
+  }
 </style>
 </head>
 <body>
 <h1>MAXWELL'S SPACE INVADERS</h1>
 <canvas id="game" width="600" height="500"></canvas>
-<p>⬅️ ➡️ to move &nbsp; | &nbsp; SPACE to shoot &nbsp; | &nbsp; R to restart</p>
+<div id="touch">
+  <button id="btnLeft">◀</button>
+  <button id="btnFire" class="fire">FIRE</button>
+  <button id="btnRight">▶</button>
+</div>
+<p id="keyhelp">⬅️ ➡️ to move &nbsp; | &nbsp; SPACE to shoot &nbsp; | &nbsp; R to restart</p>
 
 <script>
 // ===== SETTINGS — try changing these numbers! =====
@@ -167,6 +187,7 @@ const sounds = {
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const keys = {};
+const isTouch = window.matchMedia("(pointer: coarse)").matches;
 let ship, lasers, aliens, alienDir, alienSpeed, score, gameOver, won;
 let alienLasers, lives, hurtTimer, level, boss, levelTimer;
 let marchTimer = 0, marchNote = 0;
@@ -391,23 +412,42 @@ function draw() {
     ctx.fillStyle = won ? "#ff0" : "#f00";
     ctx.fillText(won ? "YOU SAVED THE GALAXY!" : "GAME OVER", 300, 300);
     ctx.font = "18px monospace";
-    ctx.fillText("Press R to play again", 300, 340);
+    ctx.fillText(isTouch ? "Tap the screen to play again" : "Press R to play again", 300, 340);
   }
 }
 
+function fire() {
+  if (lasers.length < 1 && !gameOver && !won && levelTimer === 0) {
+    lasers.push({ x: ship.x + ship.w / 2, y: ship.y });
+    sounds.shoot();
+  }
+}
+
+// ===== KEYBOARD CONTROLS (computer) =====
 document.addEventListener("keydown", e => {
   keys[e.key] = true;
   startAudio(); // browsers only allow sound after you press a key
-  if (e.key === " ") {
-    e.preventDefault();
-    if (lasers.length < 1 && !gameOver && !won && levelTimer === 0) {
-      lasers.push({ x: ship.x + ship.w / 2, y: ship.y });
-      sounds.shoot();
-    }
-  }
+  if (e.key === " ") { e.preventDefault(); fire(); }
   if (e.key === "r" || e.key === "R") startGame();
 });
 document.addEventListener("keyup", e => keys[e.key] = false);
+
+// ===== TOUCH CONTROLS (phone) =====
+function holdButton(id, key) {
+  const btn = document.getElementById(id);
+  btn.addEventListener("pointerdown", e => { e.preventDefault(); startAudio(); keys[key] = true; });
+  ["pointerup", "pointercancel", "pointerleave"].forEach(ev =>
+    btn.addEventListener(ev, () => keys[key] = false));
+}
+holdButton("btnLeft", "ArrowLeft");
+holdButton("btnRight", "ArrowRight");
+document.getElementById("btnFire").addEventListener("pointerdown", e => {
+  e.preventDefault(); startAudio(); fire();
+});
+// Tap the game screen to play again after game over
+canvas.addEventListener("pointerdown", () => { startAudio(); if (gameOver || won) startGame(); });
+// Stop long-press menus popping up while playing
+document.addEventListener("contextmenu", e => e.preventDefault());
 
 function loop() { update(); draw(); requestAnimationFrame(loop); }
 startGame();
