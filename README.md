@@ -1,6 +1,6 @@
 # 👾 Maxwell's Space Invaders
 
-A Space Invaders arcade game made by **Maxwell (age 8)** and his dad, built step by step by asking Claude for one new feature at a time.
+A Space Invaders arcade game made by **Maxwell (age 8)** and his mamma, built step by step by asking Claude for one new feature at a time.
 
 **▶️ Play it here:** https://europa-hackathons.github.io/maxwells-space-invaders/
 
