@@ -80,4 +80,4 @@ Open `index.html` in a text editor. The **SETTINGS** section at the top has numb
 
 ---
 
-Made with ❤️ by Maxwell, with help from Dad and Claude. Inspired by his friend Dina's Pac-Man game.
+Made with ❤️ by Maxwell, with help from Mamma and Claude. Inspired by his friend Dina's Pac-Man game.
